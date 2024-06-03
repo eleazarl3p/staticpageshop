@@ -18,6 +18,8 @@
         font-family: Arial, sans-serif;
         display: flex;
         justify-content: center;
+        flex-direction: column;
+        align-items: center;
       }
       .main-container {
         width: 100%;
@@ -25,9 +27,10 @@
         display: flex;
         flex-direction: column;
         align-items: center;
+        padding-top: 80px; /* Added to account for the fixed controls */
       }
       #pdf-container {
-        height: 100vh;
+        height: calc(100vh - 80px);
         width: 100%;
         overflow: auto;
         display: flex;
@@ -59,14 +62,16 @@
       .highlight {
         border: 2px solid red;
       }
-
       #controls {
         text-align: center;
         margin: 10px 0;
         position: fixed;
+        top: 0;
+        width: 100%;
+        background-color: rgb(73, 16, 16);
         z-index: 1000;
+        padding: 10px 0;
       }
-
       button {
         padding: 10px 20px;
         font-size: 16px;
@@ -82,12 +87,11 @@
   <body>
     <div class="main-container">
       <div id="controls">
-        <!-- <button id="zoom-in">Zoom In</button>
-        <button id="zoom-out">Zoom Out</button> -->
+        <button id="zoom-in">Zoom In</button>
+        <button id="zoom-out">Zoom Out</button>
         <button id="back">Back</button>
         <button id="test">test</button>
       </div>
-
       <div id="pdf-container"></div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
@@ -96,7 +100,15 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js";
 
-      const url = "11125.pdf"; // The URL to your PDF file on the server
+      // Function to get the PDF URL parameter from the browser's URL
+      function getPDFUrlFromParams() {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        return urlParams.get("pdf");
+      }
+
+      const url = getPDFUrlFromParams(); // The URL to your PDF file from the browser URL
+
       let pdfDoc = null;
       const pdfContainer = document.getElementById("pdf-container");
       const pagesHistory = [];
@@ -242,12 +254,16 @@
         }
       }
 
-      pdfjsLib.getDocument(url).promise.then((pdf) => {
-        pdfDoc = pdf;
-        for (let i = 1; i <= pdf.numPages; i++) {
-          renderPage(pdf, i, currentScale);
-        }
-      });
+      if (url) {
+        pdfjsLib.getDocument(url).promise.then((pdf) => {
+          pdfDoc = pdf;
+          for (let i = 1; i <= pdf.numPages; i++) {
+            renderPage(pdf, i, currentScale);
+          }
+        });
+      } else {
+        console.error("No PDF URL provided");
+      }
 
       function goBack() {
         if (pagesHistory.length > 0) {
@@ -268,37 +284,21 @@
         }
       }
 
-      //   function zoomIn() {
-      //     currentScale = currentScale + scaleStep;
-      //     renderPDF();
-      //   }
+      function zoomIn() {
+        currentScale = currentScale + scaleStep;
+        renderPDF();
+      }
 
-      //   function zoomOut() {
-      //     currentScale = Math.max(currentScale - scaleStep, 0.2);
-      //     renderPDF();
-      //   }
+      function zoomOut() {
+        currentScale = Math.max(currentScale - scaleStep, 0.2);
+        renderPDF();
+      }
 
-      //   const zoomInButton = document.querySelector("#zoom-in");
-      //   zoomInButton.addEventListener("click", zoomIn);
+      const zoomInButton = document.querySelector("#zoom-in");
+      zoomInButton.addEventListener("click", zoomIn);
 
-      //   const zoomOutButton = document.querySelector("#zoom-out");
-      //   zoomOutButton.addEventListener("click", zoomOut);
-
-      // Adding the scrollToPage method to pdfContainer
-      pdfContainer.scrollToPage = scrollToPage;
-      //   pdfContainer.zoomIn = zoomIn;
-      //   pdfContainer.zoomOut = zoomOut;
-
-      document.querySelector("#test").addEventListener("click", () => {
-        const pageContainer = document.querySelector(
-          `.page-container:nth-child(${3})`
-        );
-        const pdfContainerRect = pdfContainer.getBoundingClientRect();
-        const pageContainerRect = pageContainer.getBoundingClientRect();
-        console.log(pdfContainerRect);
-        console.log(pageContainerRect);
-      });
+      const zoomOutButton = document.querySelector("#zoom-out");
+      zoomOutButton.addEventListener("click", zoomOut);
     </script>
   </body>
 </html>
-
