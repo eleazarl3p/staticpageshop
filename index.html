@@ -1,31 +1,304 @@
-		<!DOCTYPE html>
-		<html lang="en">
-		  <head>
-			<meta charset="UTF-8" />
-			<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-			<title>Document</title>
-		  </head>
-		  <body>
-			<div id="adobe-dc-view"></div>
-			<script src="https://acrobatservices.adobe.com/view-sdk/viewer.js"></script>
-			<script type="text/javascript">
-			  document.addEventListener("adobe_dc_view_sdk.ready", function () {
-				var adobeDCView = new AdobeDC.View({
-				  clientId: "52f64f25d150408a9d8f6ca1ec22ac4f",
-				  divId: "adobe-dc-view",
-				});
-				adobeDCView.previewFile(
-				  {
-					content: {
-					  location: {
-						url: "http://50.240.85.189/PDF/11130/11130-013.pdf",
-					  },
-					},
-					metaData: { fileName: "Shoptrack 11125.pdf" },
-				  },
-				  { showAnnotationTools: true, showDownloadPDF: false }
-				);
-			  });
-			</script>
-		  </body>
-		</html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Viewer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background-color: rgb(73, 16, 16);
+        color: white;
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        display: flex;
+        justify-content: center;
+      }
+      .main-container {
+        width: 100%;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #pdf-container {
+        height: 100vh;
+        width: 100%;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .page-container {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 10px;
+        width: 100%;
+      }
+      .pdf-canvas {
+        border: 1px solid #000;
+        width: 100%;
+        height: auto;
+      }
+      .link-area {
+        position: absolute;
+        cursor: pointer;
+        background-color: rgba(0, 0, 255, 0.1);
+        border: 3px solid blue;
+      }
+      .link-area:hover {
+        border: 3px solid greenyellow;
+      }
+      .highlight {
+        border: 2px solid red;
+      }
+
+      #controls {
+        text-align: center;
+        margin: 10px 0;
+        position: fixed;
+        z-index: 1000;
+      }
+
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        margin: 5px;
+        cursor: pointer;
+        background-color: #444;
+        color: white;
+        border: none;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main-container">
+      <div id="controls">
+        <!-- <button id="zoom-in">Zoom In</button>
+        <button id="zoom-out">Zoom Out</button> -->
+        <button id="back">Back</button>
+        <button id="test">test</button>
+      </div>
+
+      <div id="pdf-container"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
+    <script>
+      const pdfjsLib = window["pdfjs-dist/build/pdf"];
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js";
+
+      const url = "11125.pdf"; // The URL to your PDF file on the server
+      let pdfDoc = null;
+      const pdfContainer = document.getElementById("pdf-container");
+      const pagesHistory = [];
+      let currentScale = 1.0;
+      const scaleStep = 0.2;
+
+      function renderPage(pdf, pageNumber, scale) {
+        pdf.getPage(pageNumber).then((page) => {
+          const viewport = page.getViewport({ scale: scale });
+
+          const pageContainer = document.createElement("div");
+          pageContainer.className = "page-container";
+
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          canvas.className = "pdf-canvas";
+
+          pageContainer.appendChild(canvas);
+          pdfContainer.appendChild(pageContainer);
+
+          const renderContext = {
+            canvasContext: context,
+            viewport: viewport,
+          };
+
+          page
+            .render(renderContext)
+            .promise.then(() => {
+              return page.getAnnotations();
+            })
+            .then((annotations) => {
+              annotations.forEach((annotation) => {
+                if (annotation.subtype === "Link") {
+                  const rect = viewport.convertToViewportRectangle(
+                    annotation.rect
+                  );
+                  const linkArea = document.createElement("div");
+                  linkArea.className = "link-area";
+                  linkArea.style.left = `${rect[0]}px`;
+                  linkArea.style.top = `${rect[1]}px`;
+                  linkArea.style.width = `${rect[2] - rect[0]}px`;
+                  linkArea.style.height = `${rect[3] - rect[1]}px`;
+
+                  if (annotation.url) {
+                    // External URL
+                    linkArea.addEventListener("click", (e) => {
+                      e.preventDefault();
+                      window.open(annotation.url, "_blank");
+                    });
+                  } else if (annotation.dest) {
+                    // Internal destination
+                    linkArea.addEventListener("click", (e) => {
+                      e.preventDefault();
+                      pagesHistory.push(pageNumber);
+
+                      navigateToDestination(annotation.dest, viewport);
+                    });
+                  }
+
+                  pageContainer.appendChild(linkArea);
+                }
+              });
+
+              // Adjust annotation size and position responsively
+              function resizeAnnotations() {
+                const containerWidth = pageContainer.clientWidth;
+                const scale = containerWidth / canvas.width;
+                canvas.style.width = `${containerWidth}px`;
+                canvas.style.height = `${canvas.height * scale}px`;
+
+                annotations.forEach((annotation) => {
+                  if (annotation.subtype === "Link") {
+                    const rect = viewport.convertToViewportRectangle(
+                      annotation.rect
+                    );
+                    const linkArea = pageContainer.querySelector(
+                      `.link-area:nth-child(${
+                        annotations.indexOf(annotation) + 2
+                      })`
+                    );
+                    linkArea.style.left = `${rect[0] * scale}px`;
+                    linkArea.style.top = `${rect[1] * scale}px`;
+                    linkArea.style.width = `${(rect[2] - rect[0]) * scale}px`;
+                    linkArea.style.height = `${(rect[3] - rect[1]) * scale}px`;
+                  }
+                });
+              }
+
+              resizeAnnotations();
+              window.addEventListener("resize", resizeAnnotations);
+            });
+        });
+      }
+
+      function navigateToDestination(dest, originalViewport) {
+        pdfDoc
+          .getPageIndex(dest[0])
+          .then((pageIndex) => {
+            const pageNumber = pageIndex + 1;
+            pdfDoc.getPage(pageNumber).then((page) => {
+              const viewport = page.getViewport({ scale: currentScale });
+              const rect = viewport.convertToViewportRectangle(dest.slice(2));
+
+              scrollToPage(pageNumber, rect, originalViewport, dest.slice(2));
+            });
+          })
+          .catch((error) => {
+            console.error("Error in destination request:", error);
+          });
+      }
+
+      function scrollToPage(pageNumber, rect, originalViewport, rect2) {
+        const pageContainer = document.querySelector(
+          `.page-container:nth-child(${pageNumber})`
+        );
+
+        if (pageContainer) {
+          // Scroll to the page container
+          pageContainer.scrollIntoView({ behavior: "smooth" });
+
+          // Wait for the scrolling to finish, then adjust for the specific rect
+          setTimeout(() => {
+            const pdfContainerRect = pdfContainer.getBoundingClientRect();
+            const pageContainerRect = pageContainer.getBoundingClientRect();
+
+            // Adjust the scroll position to focus on the specific rectangle
+            if (rect != undefined) {
+              const scrollY = pageContainerRect.height * (pageNumber - 1);
+              const scrollX =
+                pageContainerRect.left - pdfContainerRect.left + rect[0];
+
+              pdfContainer.scrollTo({
+                top: scrollY,
+                left: pdfContainer.scrollLeft + scrollX,
+                behavior: "smooth",
+              });
+            }
+          }, 500); // Adjust the timeout as needed
+        } else {
+          console.error(`Page number ${pageNumber} not found`);
+        }
+      }
+
+      pdfjsLib.getDocument(url).promise.then((pdf) => {
+        pdfDoc = pdf;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          renderPage(pdf, i, currentScale);
+        }
+      });
+
+      function goBack() {
+        if (pagesHistory.length > 0) {
+          const previousPage = pagesHistory.pop();
+          scrollToPage(previousPage);
+        }
+      }
+
+      const back = document.querySelector("#back");
+      back.addEventListener("click", () => {
+        goBack();
+      });
+
+      function renderPDF() {
+        pdfContainer.innerHTML = "";
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          renderPage(pdfDoc, i, currentScale);
+        }
+      }
+
+      //   function zoomIn() {
+      //     currentScale = currentScale + scaleStep;
+      //     renderPDF();
+      //   }
+
+      //   function zoomOut() {
+      //     currentScale = Math.max(currentScale - scaleStep, 0.2);
+      //     renderPDF();
+      //   }
+
+      //   const zoomInButton = document.querySelector("#zoom-in");
+      //   zoomInButton.addEventListener("click", zoomIn);
+
+      //   const zoomOutButton = document.querySelector("#zoom-out");
+      //   zoomOutButton.addEventListener("click", zoomOut);
+
+      // Adding the scrollToPage method to pdfContainer
+      pdfContainer.scrollToPage = scrollToPage;
+      //   pdfContainer.zoomIn = zoomIn;
+      //   pdfContainer.zoomOut = zoomOut;
+
+      document.querySelector("#test").addEventListener("click", () => {
+        const pageContainer = document.querySelector(
+          `.page-container:nth-child(${3})`
+        );
+        const pdfContainerRect = pdfContainer.getBoundingClientRect();
+        const pageContainerRect = pageContainer.getBoundingClientRect();
+        console.log(pdfContainerRect);
+        console.log(pageContainerRect);
+      });
+    </script>
+  </body>
+</html>
+
